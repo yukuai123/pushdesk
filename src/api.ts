@@ -16,6 +16,8 @@ export type Rule = {
   envFile: string;
   tag?: string;
   confirm?: boolean;
+  androidFlavor?: string;
+  androidLane?: string;
 };
 export type VersionRecord = Pick<Rule, 'target' | 'deployment' | 'lane' | 'branch' | 'tag'>;
 export type VersionUpdate = {
@@ -34,8 +36,36 @@ export type Project = {
   app: string;
   rules: Rule[];
   ios?: IOSConfig;
+  android?: AndroidBuildConfig;
   versionRecords?: VersionRecord[];
 };
+export type AndroidBuildConfig = {
+  directory: string;
+  debugTask: string;
+  releaseTask: string;
+  apkDirectory: string;
+  releaseRunner?: 'auto' | 'gradle' | 'fastlane';
+  fastlaneDirectory?: string;
+  fastlaneBundler?: 'auto' | 'yes' | 'no';
+};
+export type AndroidApk = { id: string; name: string; path: string; size: number; sha256: string };
+export type AndroidPackage = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  variant: 'debug' | 'release' | 'imported';
+  rule?: Rule;
+  status: 'building' | 'ready' | 'failed';
+  createdAt: number;
+  commit?: string;
+  task?: string;
+  folder: string;
+  apks: AndroidApk[];
+  logs: Log[];
+  error?: string;
+  installations?: { apkId: string; serial: string; model: string; time: number }[];
+};
+export type AndroidDevice = { serial: string; state: string; model: string; emulator: boolean };
 export type Release = {
   label: string;
   appVersion: string;
@@ -77,9 +107,19 @@ export type Log = {
 };
 export type State = {
   projects: Project[];
-  settings: { url: string; node: string; git: string };
+  settings: {
+    url: string;
+    node: string;
+    git: string;
+    androidSdk?: string;
+    javaHome?: string;
+    adb?: string;
+    fastlane?: string;
+    bundle?: string;
+  };
   hasToken: boolean;
   tasks: Task[];
+  androidPackages?: AndroidPackage[];
   logs: Log[];
   busy: boolean;
   histories: Record<string, { items: Release[]; time: number } | null>;
@@ -113,7 +153,12 @@ export type CommandName =
   | 'discard'
   | 'pickDirectory'
   | 'pickFile'
-  | 'openTaskFolder';
+  | 'openTaskFolder'
+  | 'buildAndroidPackage'
+  | 'listAndroidDevices'
+  | 'installAndroidApk'
+  | 'importAndroidApk'
+  | 'openAndroidPackageFolder';
 type CommandResult = { ok: true; data: unknown } | { ok: false; error: string; status?: number };
 type DesktopBridge = {
   [Name in CommandName]: (arg?: unknown) => Promise<CommandResult>;

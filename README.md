@@ -37,7 +37,7 @@ macOS 当前产物位于 `release/mac-arm64/PushDesk.app`。未配置正式代�
 | 发布用途 | 来源分支 | Deployment | 环境文件        |
 | -------- | -------- | ---------- | --------------- |
 | 测试     | test     | Deployment | .env.test       |
-| 预发布   | release  | Staging    | .env.stage      |
+| 预发布   | release  | Staging    | .env.staging    |
 | 生产灰度 | gray     | Production | .env.production |
 | 生产正式 | master   | Production | .env.production |
 
@@ -111,3 +111,17 @@ Hermes 默认调用当前 CLI 的 `getiOSHermesEnabled`，与现有 `release-rea
 确认发布成功后会发送系统通知和应用内反馈，通知点击可唤起窗口。通知被系统关闭时，仍可在托盘的最近结果与发布记录中查看。任务执行中禁用重复快捷操作，结果未知时不自动重传。通过托盘“退出”可真正结束应用，执行任务时会阻止退出。
 
 界面控件统一使用 Ant Design，明暗主题通过 ConfigProvider 与原生标题栏同步。顶部使用可拖动的自定义主题栏，macOS 保留原生交通灯按钮，Windows 使用原生窗口按钮覆盖层。
+
+## Android 安装包与模拟器
+
+项目管理的每个项目以及当前项目工具栏提供“Android 安装包”入口，分为“打包”和“安装”两个独立页签。打包只生成 APK，不自动安装或发布 CodePush 更新；安装可手动选择已有构建产物，也可通过文件选择器导入任意本地 APK，并明确选择已连接的 Android 模拟器。
+
+打包仍先成功拉取所选规则的远端分支，固定提交后在独立 worktree 安装依赖并构建；APK 复制至本机数据目录后清理临时源码。记录保留分支、提交、构建方式、文件大小和哈希。原生包内版本与签名由项目构建配置决定，规则中的热更新目标版本不会隐式改写原生工程。
+
+调试包使用 Gradle Wrapper；正式包默认在所选分支存在 `fastlane/Fastfile` 时使用 `fastlane android <lane>`，否则使用 Gradle。测试、预发布、生产/灰度默认 lane 分别为 `build_test`、`build_stage`、`build_prod`，每条版本规则均可覆盖 lane。Fastlane lane 内设置的 ENVFILE、签名等优先生效；配置的 lane 应只负责构建。Gemfile 声明 fastlane 时自动采用 Bundler，也可在项目配置中指定。本机 Gemfile 只声明 CocoaPods 的项目默认使用直接安装的 Fastlane。
+
+Gradle 默认任务为 `:app:assemble{flavor}Debug` 和 `:app:assemble{flavor}Release`，自动匹配 development/stage/production 等常见变体；可在规则中填写具体变体，在项目配置中覆盖任务、工程目录和 APK 输出目录。预发布默认环境文件为 `.env.staging`，已有项目打开编辑时保留原值，重新选择预发布用途时应用新默认值。
+
+服务设置可填写 Android SDK、JDK、adb、Fastlane 和 Bundler 的绝对路径；留空时自动检测常见安装目录。正式包需要项目已有可用的签名配置。安装使用 `adb -s <serial> install -r <apk>`，执行前重新校验模拟器状态及文件哈希，不自动卸载原应用；签名冲突会提示失败。调试包通常需要对应项目的 Metro 服务。
+
+底部终端顶边可拖拽调整高度并记住本机设置；双击恢复默认高度，聚焦分隔条后支持方向键及 Home/End 调整。构建详情仍默认折叠。

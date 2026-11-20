@@ -28,6 +28,7 @@ const {
   sameReleaseRule,
 } = require('./versions.cjs');
 const { platformConfig, historyKey } = require('./platforms.cjs');
+const Android = require('./android-packages.cjs');
 const { zipDir } = require('./artifacts.cjs');
 const { createCodePushClient } = require('./codepush-client.cjs');
 const { createHistoryClient } = require('./history-client.cjs');
@@ -77,6 +78,17 @@ function save(t) {
     );
   emit();
   return t;
+}
+function getAndroidPackage(id) {
+  const record = store.get('androidPackages', []).find((item) => item.id === id);
+  C.assert(record, '安装包记录不存在');
+  return record;
+}
+function saveAndroidPackage(record) {
+  const records = store.get('androidPackages', []);
+  store.put('androidPackages', [record, ...records.filter((item) => item.id !== record.id)]);
+  emit();
+  return record;
 }
 async function locked(fn) {
   C.assert(!busy, '已有任务正在执行，请等待完成');
@@ -166,6 +178,7 @@ const handlers = {
     settings: settings(),
     hasToken: !!store.get('token', null),
     tasks: store.tasks(),
+    androidPackages: store.get('androidPackages', []),
     logs,
     busy,
     histories: Object.fromEntries(
@@ -189,6 +202,7 @@ const handlers = {
   saveProject: (p) =>
     locked(async () => {
       C.validateProject(p);
+      Android.androidConfig(p);
       if (p.ios?.enabled) platformConfig(p, 'ios');
       C.assert(fs.existsSync(path.join(p.path, 'package.json')), '目录中没有 package.json');
       await git(p, ['rev-parse', '--show-toplevel']);
@@ -251,6 +265,11 @@ const handlers = {
         url: s.url.replace(/\/$/, ''),
         node: runtime.executable,
         git: s.git || 'git',
+        androidSdk: (s.androidSdk || '').trim(),
+        javaHome: (s.javaHome || '').trim(),
+        adb: (s.adb || '').trim(),
+        fastlane: (s.fastlane || '').trim(),
+        bundle: (s.bundle || '').trim(),
       });
       emit();
     }),
@@ -489,6 +508,129 @@ const handlers = {
         await git(getProject(t.projectId), ['worktree', 'remove', '--force', t.worktree]);
       return t;
     }),
+  buildAndroidPackage: (input) =>
+    locked(async () => {
+      const project = getProject(input.projectId);
+      C.validateProject(project);
+      const rule = project.rules.find((rule) => rule.id === input.ruleId);
+      C.assert(rule, '版本配置不存在');
+      C.assert(['debug', 'release'].includes(input.variant), '请选择调试包或正式包');
+      const record = {
+        id: crypto.randomUUID(),
+        projectId: project.id,
+        projectName: project.name,
+        variant: input.variant,
+        rule: { ...rule },
+        status: 'building',
+        createdAt: Date.now(),
+        folder: '',
+        apks: [],
+        logs: [],
+      };
+      record.folder = path.join(app.getPath('userData'), 'android-packages', record.id);
+      activeTask = record;
+      saveAndroidPackage(record);
+      try {
+        const runtime = await prepareNode();
+        Object.assign(
+          record,
+          await Android.buildAndroidPackage({
+            project,
+            rule,
+            variant: input.variant,
+            folder: record.folder,
+            node: runtime.executable,
+            settings: settings(),
+            log,
+            installWorker: path.join(__dirname, 'install-worker.cjs'),
+            workerExecutable: process.execPath,
+            onSource: (commit) => {
+              record.commit = commit;
+              saveAndroidPackage(record);
+            },
+          }),
+        );
+        record.status = 'ready';
+        desktopTray?.notify(
+          '安装包构建成功',
+          project.name +
+            ' · ' +
+            (input.variant === 'debug' ? '调试包' : '正式包') +
+            '，可手动选择安装',
+          'success',
+        );
+        return saveAndroidPackage(record);
+      } catch (error) {
+        record.status = 'failed';
+        record.error = C.redact(error.message, secrets);
+        saveAndroidPackage(record);
+        desktopTray?.notify(
+          '安装包构建失败',
+          project.name + ' · ' + record.error.slice(0, 100),
+          'error',
+        );
+        throw error;
+      }
+    }),
+  listAndroidDevices: () => Android.listAndroidDevices(Android.resolveAdb(settings()), log),
+  installAndroidApk: (input) =>
+    locked(async () => {
+      const record = getAndroidPackage(input.buildId);
+      activeTask = record;
+      try {
+        const installed = await Android.installAndroidApk({
+          build: record,
+          apkId: input.apkId,
+          serial: input.serial,
+          adb: Android.resolveAdb(settings()),
+          log,
+        });
+        record.installations = [...(record.installations || []), installed];
+        desktopTray?.notify('安装成功', installed.model + ' · ' + installed.serial, 'success');
+        return installed;
+      } finally {
+        saveAndroidPackage(record);
+      }
+    }),
+  importAndroidApk: ({ projectId }) =>
+    locked(async () => {
+      const project = getProject(projectId);
+      const selected = await dialog.showOpenDialog(win, {
+        title: '选择 Android 安装包',
+        properties: ['openFile'],
+        filters: [{ name: 'Android 安装包', extensions: ['apk'] }],
+      });
+      if (selected.canceled || !selected.filePaths[0]) return null;
+      const file = selected.filePaths[0];
+      C.assert(/\.apk$/i.test(file) && fs.statSync(file).isFile(), '请选择 APK 文件');
+      const id = crypto.randomUUID();
+      const folder = path.join(app.getPath('userData'), 'android-packages', id);
+      fs.mkdirSync(folder, { recursive: true });
+      const target = path.join(folder, path.basename(file));
+      fs.copyFileSync(file, target);
+      const record = {
+        id,
+        projectId: project.id,
+        projectName: project.name,
+        variant: 'imported',
+        status: 'ready',
+        createdAt: Date.now(),
+        folder,
+        logs: [],
+        apks: [
+          {
+            id: crypto.randomUUID(),
+            name: path.basename(file),
+            path: target,
+            size: fs.statSync(target).size,
+            sha256: C.sha(target),
+          },
+        ],
+      };
+      log('已选择本地 APK：' + path.basename(file) + '；尚未安装', 'info');
+      return saveAndroidPackage(record);
+    }),
+  openAndroidPackageFolder: (id) => shell.openPath(getAndroidPackage(id).folder),
   pickDirectory: async () => {
     const r = await dialog.showOpenDialog(win, {
       properties: ['openDirectory'],
@@ -513,6 +655,14 @@ app.whenReady().then(async () => {
       node: process.env.NVM_BIN ? path.join(process.env.NVM_BIN, 'node') : 'node',
       git: 'git',
     });
+  for (const record of store.get('androidPackages', [])) {
+    if (record.status === 'building')
+      saveAndroidPackage({
+        ...record,
+        status: 'failed',
+        error: '上次安装包构建被中断，请重新构建',
+      });
+  }
   for (const t of store.tasks()) {
     if (t.status === 'uploading') save({ ...t, status: 'unknown' });
     if (t.status === 'building')

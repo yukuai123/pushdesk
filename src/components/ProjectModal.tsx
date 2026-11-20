@@ -4,7 +4,14 @@ import { Checkbox, Input, Button, Disclosure, Select } from '../ui';
 import { iosBuildDefaults } from '../platform';
 import { FolderOpen, Plus, X } from 'lucide-react';
 import { useState } from 'react';
-import { call, names, type BuildConfig, type Project, type Rule } from '../api';
+import {
+  call,
+  names,
+  type BuildConfig,
+  type AndroidBuildConfig,
+  type Project,
+  type Rule,
+} from '../api';
 import { releasePresets } from '../release-presets';
 import { uid } from '../utils';
 import { Badge } from './Badge';
@@ -44,6 +51,18 @@ export function ProjectModal({
   const [confirmationDialog, confirmationContext] = AntModal.useModal();
   function change<Key extends keyof Project>(key: Key, value: Project[Key]) {
     setDraft((x) => ({ ...x, [key]: value }));
+  }
+  const androidDefaults: AndroidBuildConfig = {
+    directory: 'android',
+    debugTask: ':app:assemble{flavor}Debug',
+    releaseTask: ':app:assemble{flavor}Release',
+    apkDirectory: 'app/build/outputs/apk',
+    releaseRunner: 'auto',
+    fastlaneDirectory: '.',
+    fastlaneBundler: 'auto',
+  };
+  function changeAndroid(key: keyof AndroidBuildConfig, value: string) {
+    change('android', { ...androidDefaults, ...draft.android, [key]: value });
   }
   function changeIOSBuild<Key extends keyof BuildConfig>(key: Key, value: BuildConfig[Key]) {
     setDraft((current) => ({
@@ -110,6 +129,76 @@ export function ProjectModal({
               </Button>
             </div>
           </label>
+          <Disclosure>
+            <summary>Android 安装包构建配置</summary>
+            <div className="two-col">
+              {Object.entries({
+                directory: 'Android 工程目录',
+                debugTask: '调试包 Gradle 任务',
+                releaseTask: '正式包 Gradle 任务',
+                apkDirectory: 'APK 输出目录（相对 Android 工程）',
+                fastlaneDirectory: 'Fastlane 工作目录（相对项目）',
+              }).map(([key, label]) => (
+                <label key={key}>
+                  {label}
+                  <Input
+                    required
+                    value={
+                      (draft.android || androidDefaults)[key as keyof AndroidBuildConfig] ??
+                      androidDefaults[key as keyof AndroidBuildConfig]
+                    }
+                    onChange={(event) =>
+                      changeAndroid(key as keyof AndroidBuildConfig, event.target.value)
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="two-col">
+              <label>
+                正式包构建方式
+                <Select
+                  value={draft.android?.releaseRunner || 'auto'}
+                  onChange={(event) =>
+                    change('android', {
+                      ...androidDefaults,
+                      ...draft.android,
+                      releaseRunner: event.target.value as AndroidBuildConfig['releaseRunner'],
+                    })
+                  }
+                >
+                  <option value="auto">自动：有 Fastfile 时使用 Fastlane</option>
+                  <option value="fastlane">Fastlane</option>
+                  <option value="gradle">Gradle</option>
+                </Select>
+              </label>
+              <label>
+                Fastlane 依赖方式
+                <Select
+                  value={draft.android?.fastlaneBundler || 'auto'}
+                  onChange={(event) =>
+                    change('android', {
+                      ...androidDefaults,
+                      ...draft.android,
+                      fastlaneBundler: event.target.value as AndroidBuildConfig['fastlaneBundler'],
+                    })
+                  }
+                >
+                  <option value="auto">自动：Gemfile 声明 fastlane 时使用 Bundler</option>
+                  <option value="yes">Bundler（bundle exec fastlane）</option>
+                  <option value="no">本机 Fastlane</option>
+                </Select>
+              </label>
+            </div>
+            <p className="muted tiny">
+              正式包默认使用项目现有 Fastlane，测试 / 预发布 / 生产默认对应 build_test / build_stage
+              / build_prod，可在下方规则中覆盖 lane。Fastlane 内的环境与签名设置优先生效。
+            </p>
+            <p className="muted tiny">
+              Gradle 自动匹配用途对应的 Android 变体，任务中的 {'{flavor}'}{' '}
+              会替换为该变体。自定义工程可填写完整任务名。
+            </p>
+          </Disclosure>
           <section className="ios-config">
             <Checkbox
               className="checkbox"
@@ -246,6 +335,8 @@ export function ProjectModal({
                   ['target', '包版本号'],
                   ['tag', '备注标签（选填）'],
                   ['envFile', '环境文件'],
+                  ['androidFlavor', 'Gradle 安装包变体（选填）'],
+                  ['androidLane', 'Android 正式包 Fastlane lane（选填）'],
                 ].map(([k, label]) => (
                   <label key={k}>
                     {label}
@@ -275,14 +366,26 @@ export function ProjectModal({
                       </Select>
                     ) : (
                       <Input
-                        required={k !== 'tag'}
+                        required={!['tag', 'androidFlavor', 'androidLane'].includes(k)}
                         maxLength={k === 'tag' ? 80 : undefined}
                         value={String(rule[k as keyof Rule] || '')}
+                        placeholder={
+                          k === 'androidFlavor'
+                            ? '自动识别，例如 development / stage / production'
+                            : undefined
+                        }
                         onChange={(e) =>
                           change(
                             'rules',
                             draft.rules.map((x, j) =>
-                              j === i ? { ...x, [k]: e.target.value } : x,
+                              j === i
+                                ? {
+                                    ...x,
+                                    [k]: ['androidFlavor', 'androidLane'].includes(k)
+                                      ? e.target.value || undefined
+                                      : e.target.value,
+                                  }
+                                : x,
                             ),
                           )
                         }

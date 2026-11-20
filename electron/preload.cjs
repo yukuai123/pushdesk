@@ -17,6 +17,11 @@ const methods = [
   'pickDirectory',
   'pickFile',
   'openTaskFolder',
+  'buildAndroidPackage',
+  'listAndroidDevices',
+  'installAndroidApk',
+  'importAndroidApk',
+  'openAndroidPackageFolder',
 ];
 const api = Object.fromEntries(
   methods.map((name) => [name, (arg) => ipcRenderer.invoke('pushdesk:' + name, arg)]),

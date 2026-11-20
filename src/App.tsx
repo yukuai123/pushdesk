@@ -39,6 +39,11 @@ import { ErrorContext } from './components/Modal';
 import { ProjectModal } from './components/ProjectModal';
 import { TaskRow } from './components/TaskRow';
 import { TerminalLogs } from './components/TerminalLogs';
+import {
+  TerminalResizeHandle,
+  terminalHeight as clampTerminalHeight,
+} from './components/TerminalResizeHandle';
+import { AndroidPackages } from './components/AndroidPackages';
 import { retainLogs } from './logs';
 import { Overview } from './pages/Overview';
 import { Publish } from './pages/Publish';
@@ -71,6 +76,13 @@ export function App() {
     [notice, setNotice] = useState<{ title: string; body: string; status: string } | null>(null),
     [working, setWorking] = useState(false),
     [terminal, setTerminal] = useState(true),
+    [terminalHeight, setTerminalHeight] = useState(() =>
+      clampTerminalHeight(
+        Number(localStorage.getItem('pushdesk-terminal-height') || 140),
+        window.innerHeight,
+      ),
+    ),
+    [packageProjectId, setPackageProjectId] = useState(''),
     [extraLogs, setExtraLogs] = useState<State['logs']>([]),
     [filter, setFilter] = useState(''),
     [laneFilter, setLaneFilter] = useState('all'),
@@ -84,6 +96,21 @@ export function App() {
   const currentApp = project ? appName(project, activePlatform) : '';
   const historySequence = useRef(0);
   const logs = [...state.logs, ...extraLogs];
+  const packageProject = state.projects.find((item) => item.id === packageProjectId);
+  useEffect(() => {
+    localStorage.setItem('pushdesk-terminal-height', String(terminalHeight));
+  }, [terminalHeight]);
+  useEffect(() => {
+    const resize = () =>
+      setTerminalHeight((value) => clampTerminalHeight(value, window.innerHeight));
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+  function openAndroid(projectId: string) {
+    setError('');
+    setPackageProjectId(projectId);
+    setModal('android');
+  }
   async function reload() {
     if (desktop) {
       const data = await call<State>('snapshot');
@@ -372,6 +399,9 @@ export function App() {
                   )}
                   <code>{appName(project, activePlatform)}</code>
                   <span className="grow" />
+                  <Button type="button" onClick={() => openAndroid(project.id)}>
+                    Android 安装包
+                  </Button>
                   <Button className="text-button" onClick={() => edit(project)}>
                     配置项目 <ArrowUpRight size={14} />
                   </Button>
@@ -413,7 +443,14 @@ export function App() {
                           ))}
                         </div>
                       </div>
-                      <Button onClick={() => edit(x)}>编辑配置</Button>
+                      <div className="project-package-actions">
+                        <Button type="button" onClick={() => openAndroid(x.id)}>
+                          Android 安装包
+                        </Button>
+                        <Button type="button" onClick={() => edit(x)}>
+                          编辑配置
+                        </Button>
+                      </div>
                     </article>
                   ))}
                   {!state.projects.length && <Empty onAdd={() => edit(null)} />}
@@ -498,6 +535,9 @@ export function App() {
               )}
             </main>
             <section className={'terminal ' + (!terminal ? 'collapsed' : '')}>
+              {terminal && (
+                <TerminalResizeHandle height={terminalHeight} onChange={setTerminalHeight} />
+              )}
               <div className="terminal-head">
                 <Button onClick={() => setTerminal(!terminal)}>
                   <Terminal size={16} />
@@ -521,7 +561,10 @@ export function App() {
                 </div>
               </div>
               {terminal && (
-                <div className="terminal-body">
+                <div
+                  className="terminal-body"
+                  style={{ height: terminalHeight, maxHeight: 'calc(100vh - 280px)' }}
+                >
                   {!logs.length ? (
                     <>
                       <div className="terminal-welcome">
@@ -542,6 +585,17 @@ export function App() {
               )}
             </section>
           </div>
+          {modal === 'android' && packageProject && (
+            <AndroidPackages
+              key={packageProject.id}
+              project={packageProject}
+              packages={state.androidPackages || []}
+              busy={state.busy || working}
+              close={() => setModal(null)}
+              onChanged={reload}
+              onConfigure={() => edit(packageProject)}
+            />
+          )}
           {modal === 'project' && (
             <ProjectModal
               project={editing}

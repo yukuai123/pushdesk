@@ -361,3 +361,28 @@ test('终端接收持续构建输出时仍保留命令及阶段头', () => {
   assert.equal(logs[0].id, 'cmd');
   assert.equal(logs[1].id, 'stage');
 });
+
+test('Android 安装包默认只打包，安装与本地 APK 选择是独立入口；预发布默认 .env.staging', () => {
+  const { AndroidPackages } = require('../src/components/AndroidPackages.tsx');
+  const { releasePresets } = require('../src/release-presets.ts');
+  assert.equal(releasePresets.staging.envFile, '.env.staging');
+  const html = renderToStaticMarkup(
+    React.createElement(AndroidPackages, {
+      project: dualProject,
+      packages: [],
+      busy: false,
+      close: () => {},
+      onChanged: async () => {},
+      onConfigure: () => {},
+    }),
+  );
+  assert.match(html, /构建调试包/);
+  assert.match(html, /正式包/);
+  assert.match(html, /只生成 APK，不自动安装/);
+  assert.match(html, />安装</);
+  assert.doesNotMatch(html, /安装到所选模拟器/);
+  const { terminalHeight } = require('../src/components/TerminalResizeHandle.tsx');
+  assert.equal(terminalHeight(200, 820), 200);
+  assert.equal(terminalHeight(1000, 580), 300);
+  assert.equal(terminalHeight(-50, 820), 80);
+});

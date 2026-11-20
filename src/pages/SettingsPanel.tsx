@@ -1,4 +1,4 @@
-import { Input, Button } from '../ui';
+import { Input, Button, Disclosure } from '../ui';
 import { FolderOpen, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { call, type State } from '../api';
@@ -71,6 +71,31 @@ export function SettingsPanel({
               onChange={(e) => setSettingsDraft({ ...settingsDraft, git: e.target.value })}
             />
           </label>
+          <Disclosure>
+            <summary>Android 与 Fastlane 环境（自动识别，可选）</summary>
+            <div className="two-col">
+              {(
+                [
+                  ['androidSdk', 'Android SDK 目录', '自动识别 Android SDK'],
+                  ['javaHome', 'JDK 目录', '自动使用 Android Studio 内置 JDK'],
+                  ['adb', 'adb 可执行文件', '自动使用 SDK 内的 adb'],
+                  ['fastlane', 'Fastlane 可执行文件', '自动识别 Homebrew / PATH'],
+                  ['bundle', 'Bundler 可执行文件', '使用 Bundler 时自动识别'],
+                ] as const
+              ).map(([key, label, placeholder]) => (
+                <label key={key}>
+                  {label}
+                  <Input
+                    value={settingsDraft[key] || ''}
+                    placeholder={placeholder}
+                    onChange={(event) =>
+                      setSettingsDraft({ ...settingsDraft, [key]: event.target.value })
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </Disclosure>
           <div className="form-footer">
             <Button type="button" disabled={busy || !state.projects.length} onClick={onInspect}>
               检测环境

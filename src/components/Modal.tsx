@@ -6,11 +6,13 @@ export function Modal({
   children,
   close,
   wide = false,
+  className = '',
 }: {
   title: string;
   children: React.ReactNode;
   close: () => void;
   wide?: boolean;
+  className?: string;
 }) {
   const error = React.useContext(ErrorContext);
   const content = (
@@ -33,7 +35,7 @@ export function Modal({
       onCancel={close}
       footer={null}
       width={wide ? 920 : 620}
-      className="push-modal"
+      className={'push-modal ' + className}
       styles={{ body: { padding: 0 } }}
       maskClosable={false}
     >

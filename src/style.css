@@ -1632,3 +1632,66 @@ label > .ant-select {
   max-height: 240px;
   overflow: auto;
 }
+
+.terminal .terminal-resizer.ant-btn {
+  display: flex;
+  width: 100%;
+  height: 7px;
+  min-height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #273447;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.terminal .terminal-resizer.ant-btn:hover,
+.terminal .terminal-resizer.ant-btn:focus-visible {
+  background: #4268dd;
+}
+.terminal-resizer > span {
+  width: 36px;
+  height: 2px;
+  border-radius: 2px;
+  background: #8c9bb0;
+}
+.project-package-actions,
+.apk-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.android-packages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.android-packages .ant-tabs-tabpane > * + * {
+  margin-top: 12px;
+}
+.apk-build-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+@media (max-width: 1000px) {
+  .apk-build-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .apk-build-form > button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+.android-packages .ant-select {
+  width: 100%;
+}
+.android-package-modal {
+  top: 32px;
+  padding-bottom: 24px;
+}
+.android-package-modal .android-packages {
+  max-height: calc(100dvh - 168px);
+  overflow: auto;
+}
