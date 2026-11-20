@@ -29,7 +29,13 @@ export function Publish({
       className="panel publish-panel"
       onSubmit={(e) => {
         e.preventDefault();
-        onPrepare({ projectId: project.id, ruleId: rule.id, description, mandatory, platform });
+        onPrepare({
+          projectId: project.id,
+          ruleId: rule.id,
+          description,
+          mandatory,
+          platform,
+        });
       }}
     >
       <div className="panel-heading">
@@ -46,7 +52,7 @@ export function Publish({
             {project.rules.map((rule) => (
               <option key={rule.id} value={rule.id}>
                 {rule.target}
-                {rule.tag ? ` · ${rule.tag}` : ''} · {names[rule.lane]}
+                {rule.tag ? ` · ${rule.tag}` : ''} · {rule.branch} · {names[rule.lane]}
               </option>
             ))}
           </Select>

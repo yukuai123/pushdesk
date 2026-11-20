@@ -133,6 +133,7 @@ test('真实构建子进程把 iOS 参数传给项目内的 RN CLI，并输出�
     fs.writeFileSync(path.join(cwd, 'ios/Podfile'), ':hermes_enabled => false');
     const input = {
       cwd,
+      nodeExecutable: process.execPath,
       output: path.join(cwd, 'ios-output'),
       platform: 'ios',
       build: platformConfig({ app: old.app, ios: { enabled: true, app: 'sample-ios' } }, 'ios')
@@ -146,7 +147,8 @@ test('真实构建子进程把 iOS 参数传给项目内的 RN CLI，并输出�
       {
         env: {
           ...process.env,
-          PATH: path.dirname(process.execPath) + path.delimiter + process.env.PATH,
+          PATH: '',
+          ELECTRON_RUN_AS_NODE: '1',
         },
       },
     );

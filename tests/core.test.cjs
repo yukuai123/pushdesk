@@ -20,11 +20,15 @@ const project = () => ({
   app: 'pda-android',
   rules: [rule('stable', '1.0.2'), rule('gray', '1.0.3')],
 });
-test('正式和灰度允许共用 Production，必须使用不同目标版本', () => {
+test('配置按版本号加分支唯一，同版本的不同分支可共存', () => {
   assert.equal(C.validateProject(project()).rules.length, 2);
   const p = project();
   p.rules[1].target = '1.0.2';
-  assert.throws(() => C.validateProject(p), /只能绑定一种用途/);
+  assert.doesNotThrow(() => C.validateProject(p));
+  assert.doesNotThrow(() => C.checkServerConflicts(p, p.rules[0], [{ appVersion: '1.0.2' }]));
+  p.rules[1].branch = 'master';
+  p.rules[1].deployment = 'Staging';
+  assert.throws(() => C.validateProject(p), /版本号与分支的组合不能重复/);
 });
 test('只接受明确版本，拒绝范围和危险分支', () => {
   for (const v of ['*', '^1.0.0', '1.0', 'v1.0.2']) {

@@ -230,3 +230,134 @@ test('服务端历史只显示当前部署目标，不合并其他部署缓存',
   assert.match(html, /预发布唯一记录/);
   assert.doesNotMatch(html, /生产唯一记录/);
 });
+
+test('同版本不同分支的历史标签不串用，卡片区分分支最近发布与包当前更新', () => {
+  const { versionRecords, sourceBranch } = require('../src/versions.ts');
+  const { ReleaseVersionCard } = require('../src/components/ReleaseVersionCard.tsx');
+  const project = {
+    ...dualProject,
+    rules: [
+      dualProject.rules[0],
+      { ...dualProject.rules[0], id: 'gray', lane: 'gray', branch: 'gray', tag: '灰度标签' },
+    ],
+  };
+  assert.equal(versionRecords(project).length, 2);
+  const tasks = project.rules.map((rule, index) => ({
+    id: 'task' + index,
+    projectId: 'dual',
+    app: 'dual-android',
+    platform: 'android',
+    rule,
+  }));
+  const items = tasks.map((task, index) => ({
+    label: 'v' + index,
+    appVersion: '1.0.2',
+    description: '[PushDesk:' + task.id + ']',
+    uploadTime: index + 1,
+    rollout: 100,
+  }));
+  assert.equal(
+    sourceBranch(items[0], tasks, {
+      projectId: 'dual',
+      platform: 'android',
+      deployment: 'Production',
+      app: 'dual-android',
+    }),
+    'master',
+  );
+  assert.equal(
+    sourceBranch(items[0], tasks, { projectId: 'dual', platform: 'ios', deployment: 'Production' }),
+    undefined,
+  );
+  const html = renderToStaticMarkup(
+    React.createElement(ReleaseVersionCard, {
+      projectId: 'dual',
+      app: 'dual-android',
+      rule: project.rules[0],
+      tasks,
+      cache: { items, time: 1 },
+      busy: false,
+      onSave: async () => {},
+      onPublish: () => {},
+    }),
+  );
+  assert.match(html, /该分支最近发布，非包当前更新/);
+  assert.match(html, /v0/);
+  assert.doesNotMatch(html, />v1<\/span>/);
+});
+
+test('终端默认折叠安装和构建输出，命令与其他日志仍显示，失败自动展开', () => {
+  const { TerminalLogs } = require('../src/components/TerminalLogs.tsx');
+  const { terminalEntries } = require('../src/logs.ts');
+  const logs = [
+    { id: 'git', time: 1, kind: 'command', text: '$ git fetch origin test' },
+    {
+      id: 'start',
+      time: 2,
+      kind: 'progress',
+      text: '构建应用 · 进行中',
+      groupId: 'build',
+      stage: { title: '构建应用', status: 'running' },
+    },
+    {
+      id: 'command',
+      time: 3,
+      kind: 'command',
+      text: '$ /absolute/node react-native bundle',
+      groupId: 'build',
+    },
+    { id: 'output', time: 4, kind: 'output', text: 'VERBOSE_BUNDLE_DETAILS', groupId: 'build' },
+    {
+      id: 'done',
+      time: 5,
+      kind: 'success',
+      text: '构建应用 · 已完成',
+      groupId: 'build',
+      stage: { title: '构建应用', status: 'success' },
+    },
+    { id: 'query', time: 6, kind: 'output', text: '已查询 14 条发布记录' },
+  ];
+  const entries = terminalEntries(logs);
+  assert.equal(entries.length, 4);
+  assert.equal(entries[1].group.details[0].text, 'VERBOSE_BUNDLE_DETAILS');
+  const html = renderToStaticMarkup(React.createElement(TerminalLogs, { logs }));
+  assert.match(html, /git fetch/);
+  assert.match(html, /react-native bundle/);
+  assert.match(html, /构建应用 · 已完成/);
+  assert.match(html, /已查询 14 条发布记录/);
+  assert.doesNotMatch(html, /VERBOSE_BUNDLE_DETAILS/);
+  assert.match(html, /aria-expanded="false"/);
+  const failed = logs.map((log) =>
+    log.id === 'done'
+      ? {
+          ...log,
+          kind: 'error',
+          text: '构建应用 · 失败',
+          stage: { title: '构建应用', status: 'error' },
+        }
+      : log,
+  );
+  const errorHtml = renderToStaticMarkup(React.createElement(TerminalLogs, { logs: failed }));
+  assert.match(errorHtml, /VERBOSE_BUNDLE_DETAILS/);
+  assert.match(errorHtml, /aria-expanded="true"/);
+});
+
+test('终端接收持续构建输出时仍保留命令及阶段头', () => {
+  const { retainLogs } = require('../src/logs.ts');
+  const first = [
+    { id: 'cmd', kind: 'command', text: '$ node build' },
+    { id: 'stage', groupId: 'g', stage: { status: 'running' } },
+  ];
+  const logs = retainLogs([
+    ...first,
+    ...Array.from({ length: 600 }, (_, index) => ({
+      id: String(index),
+      kind: 'output',
+      groupId: 'g',
+      text: 'build details',
+    })),
+  ]);
+  assert.equal(logs.length, 500);
+  assert.equal(logs[0].id, 'cmd');
+  assert.equal(logs[1].id, 'stage');
+});

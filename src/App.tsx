@@ -38,6 +38,8 @@ import { Empty } from './components/Empty';
 import { ErrorContext } from './components/Modal';
 import { ProjectModal } from './components/ProjectModal';
 import { TaskRow } from './components/TaskRow';
+import { TerminalLogs } from './components/TerminalLogs';
+import { retainLogs } from './logs';
 import { Overview } from './pages/Overview';
 import { Publish } from './pages/Publish';
 import { SettingsPanel } from './pages/SettingsPanel';
@@ -82,7 +84,6 @@ export function App() {
   const currentApp = project ? appName(project, activePlatform) : '';
   const historySequence = useRef(0);
   const logs = [...state.logs, ...extraLogs];
-  const end = useRef<HTMLDivElement>(null);
   async function reload() {
     if (desktop) {
       const data = await call<State>('snapshot');
@@ -98,7 +99,7 @@ export function App() {
         setTask(e.data);
         setModal('confirm');
       } else if (e.type === 'change') reload();
-      else if (e.type === 'log') setExtraLogs((x) => [...x.slice(-500), e.data]);
+      else if (e.type === 'log') setExtraLogs((x) => retainLogs([...x, e.data]));
     });
   }, []);
   useEffect(() => {
@@ -106,9 +107,6 @@ export function App() {
     localStorage.setItem('pushdesk-theme', theme);
     if (desktop) void call('setTheme', theme).catch(() => {});
   }, [theme]);
-  useEffect(() => {
-    if (logs.length) end.current?.scrollIntoView({ block: 'nearest' });
-  }, [logs.length]);
   async function action(fn: () => Promise<unknown>) {
     setWorking(true);
     setError('');
@@ -509,7 +507,7 @@ export function App() {
                   <ChevronDown size={15} className={!terminal ? 'rotate' : ''} />
                 </Button>
                 <div>
-                  <span>命令与输出 · 访问令牌自动脱敏</span>
+                  <span>命令与进度 · 构建详情默认收起</span>
                   <Button
                     aria-label="复制终端日志"
                     onClick={() =>
@@ -538,16 +536,8 @@ export function App() {
                       </div>
                     </>
                   ) : (
-                    logs.map((l) => (
-                      <div className={'log ' + l.kind} key={l.id}>
-                        <time>
-                          {new Date(l.time).toLocaleTimeString('zh-CN', { hour12: false })}
-                        </time>
-                        <pre>{l.text}</pre>
-                      </div>
-                    ))
+                    <TerminalLogs logs={logs} />
                   )}
-                  <div ref={end} />
                 </div>
               )}
             </section>

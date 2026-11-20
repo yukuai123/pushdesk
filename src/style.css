@@ -1598,3 +1598,37 @@ label > .ant-select {
 .ant-card.lane-card {
   border-top-width: 3px;
 }
+
+.terminal-body .build-log-group {
+  margin: 6px 0;
+  border-color: #2b3544;
+  background: transparent;
+}
+.terminal-body .build-log-group .ant-collapse-header {
+  color: #b1bfd0;
+}
+.terminal-body .build-log-group .ant-collapse-content {
+  background: transparent;
+  border-color: #2b3544;
+}
+.build-log-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.build-log-summary small {
+  color: #8c9bb0;
+}
+.build-log-summary.success {
+  color: #7bc8a0;
+}
+.build-log-summary.error {
+  color: #f49a99;
+}
+.terminal-body .build-log-group .ant-collapse-content-box {
+  max-height: 240px;
+  overflow: auto;
+}

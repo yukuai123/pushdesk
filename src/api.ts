@@ -22,6 +22,8 @@ export type VersionUpdate = {
   projectId: string;
   ruleId: string;
   expectedTarget: string;
+  expectedBranch?: string;
+  branch?: string;
   target: string;
   tag: string;
 };
@@ -64,7 +66,15 @@ export type Task = {
   label?: string;
   logs?: Log[];
 };
-export type Log = { id: string; time: number; text: string; kind: string };
+export type Log = {
+  id: string;
+  time: number;
+  text: string;
+  kind: string;
+  groupId?: string;
+  groupTitle?: string;
+  stage?: { title: string; status: 'running' | 'success' | 'error' };
+};
 export type State = {
   projects: Project[];
   settings: { url: string; node: string; git: string };
@@ -122,7 +132,11 @@ export async function call<T = unknown>(name: CommandName, arg?: unknown): Promi
 }
 export const empty: State = {
   projects: [],
-  settings: { url: 'https://code-push-server.tastientech.com', node: 'node', git: 'git' },
+  settings: {
+    url: 'https://code-push-server.tastientech.com',
+    node: 'node',
+    git: 'git',
+  },
   hasToken: false,
   tasks: [],
   logs: [],

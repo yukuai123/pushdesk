@@ -3,7 +3,12 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
-const lanes = { stable: '生产正式', gray: '生产灰度', staging: '预发布', test: '测试' };
+const lanes = {
+  stable: '生产正式',
+  gray: '生产灰度',
+  staging: '预发布',
+  test: '测试',
+};
 function assert(ok, message) {
   if (!ok) throw new Error(message);
 }
@@ -40,8 +45,8 @@ function validateProject(p) {
       typeof r.envFile === 'string' && /^\.env(?:[.\w-]*)$/.test(r.envFile),
       '环境文件仅支持项目根目录的 .env 文件',
     );
-    const key = `${r.deployment}:${r.target}`;
-    assert(!seen.has(key), '同一 Deployment 的同一目标版本只能绑定一种用途');
+    const key = JSON.stringify([r.target, r.branch]);
+    assert(!seen.has(key), '同一项目中，版本号与分支的组合不能重复');
     seen.add(key);
   }
   return p;
@@ -69,6 +74,7 @@ function checkServerConflicts(project, rule, history) {
       (r) =>
         r.deployment === rule.deployment &&
         r.lane !== rule.lane &&
+        r.target !== rule.target &&
         semver.satisfies(r.target, h.appVersion),
     );
     assert(

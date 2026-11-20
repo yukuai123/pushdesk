@@ -14,7 +14,9 @@ export function TaskRow({ t, onOpen }: { t: Task; onOpen: () => void }) {
       <div className="grow">
         <strong>
           {t.projectName} · {platformNames[t.platform || 'android']}
-          <span className="mono">{t.rule.target}</span>
+          <span className="mono">
+            {t.rule.target} · {t.rule.branch}
+          </span>
         </strong>
         <small>
           {t.description || '未填写更新说明'} · {date(t.createdAt)}

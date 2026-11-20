@@ -19,6 +19,8 @@ const {
 } = require('./release-policy.cjs');
 const { Store } = require('./store.cjs');
 const C = require('./core.cjs');
+const { resolveNode, nodeEnvironment } = require('./runtime.cjs');
+const { runBuildStage, appendLog } = require('./build-logs.cjs');
 const {
   rememberVersions,
   updateVersion,
@@ -41,14 +43,16 @@ app.on('second-instance', () => {
 });
 const logs = [];
 let secrets = [];
-function log(text, kind = 'output') {
-  const row = { id: crypto.randomUUID(), time: Date.now(), text: C.redact(text, secrets), kind };
-  if (activeTask) {
-    activeTask.logs.push(row);
-    if (activeTask.logs.length > 1500) activeTask.logs.shift();
-  }
-  logs.push(row);
-  if (logs.length > 1500) logs.shift();
+function log(text, kind = 'output', metadata = {}) {
+  const row = {
+    id: crypto.randomUUID(),
+    time: Date.now(),
+    text: C.redact(text, secrets),
+    kind,
+    ...metadata,
+  };
+  if (activeTask) appendLog(activeTask.logs, row);
+  appendLog(logs, row);
   win?.webContents.send('pushdesk:event', { type: 'log', data: row });
 }
 function emit() {
@@ -105,7 +109,10 @@ const sdk = createCodePushClient({
 const queryHistory = createHistoryClient({ settings, token, log });
 async function historyForApp(projectId, appName, deployment, platform = 'android') {
   const items = C.normalizeHistory(await queryHistory(appName, deployment));
-  store.put('history:' + historyKey(projectId, deployment, platform), { items, time: Date.now() });
+  store.put('history:' + historyKey(projectId, deployment, platform), {
+    items,
+    time: Date.now(),
+  });
   log(`已查询 ${platform === 'ios' ? 'iOS' : 'Android'} 的 ${items.length} 条发布记录`, 'success');
   emit();
   return items;
@@ -127,7 +134,19 @@ function showWindow(taskToOpen) {
   win.show();
   win.focus();
   if (taskToOpen?.id)
-    win.webContents.send('pushdesk:event', { type: 'openTask', data: taskToOpen });
+    win.webContents.send('pushdesk:event', {
+      type: 'openTask',
+      data: taskToOpen,
+    });
+}
+async function prepareNode() {
+  const configured = settings().node || 'node';
+  const runtime = await resolveNode(configured);
+  if (configured !== runtime.executable) {
+    store.put('settings', { ...settings(), node: runtime.executable });
+    log('自动定位 Node.js：' + runtime.executable + ' (' + runtime.version + ')', 'success');
+  }
+  return runtime;
 }
 const handlers = {
   setTheme: (mode) => {
@@ -196,8 +215,10 @@ const handlers = {
         projects().map((project) => (project.id === next.id ? next : project)),
       );
       for (const task of invalidateVersionTasks(store.tasks(), next.id, previous, next)) save(task);
+      const before = previous.rules.find((rule) => rule.id === input.ruleId);
+      const after = next.rules.find((rule) => rule.id === input.ruleId);
       log(
-        `已同步发布版本 ${input.expectedTarget} → ${input.target.trim()}${input.tag.trim() ? ' · ' + input.tag.trim() : ''}，后续命令和构建读取新版本。`,
+        `已同步发布配置 ${before.target} + ${before.branch} → ${after.target} + ${after.branch}${after.tag ? ' · ' + after.tag : ''}，后续命令和构建读取新配置。`,
         'success',
       );
       emit();
@@ -223,11 +244,12 @@ const handlers = {
           (u.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(u.hostname)),
         '服务必须使用 HTTPS',
       );
+      const runtime = await resolveNode(s.node || 'node');
       const old = settings();
       if (old.url !== s.url) store.put('token', null);
       store.put('settings', {
         url: s.url.replace(/\/$/, ''),
-        node: s.node || 'node',
+        node: runtime.executable,
         git: s.git || 'git',
       });
       emit();
@@ -237,7 +259,10 @@ const handlers = {
       C.assert(value?.trim(), '请输入 Token');
       C.assert(safeStorage.isEncryptionAvailable(), '系统安全存储不可用');
       log('$ code-push login ' + settings().url + ' --accessKey ••••••', 'command');
-      const ok = await sdk('isAuthenticated', [true], { url: settings().url, token: value.trim() });
+      const ok = await sdk('isAuthenticated', [true], {
+        url: settings().url,
+        token: value.trim(),
+      });
       C.assert(ok, 'Token 验证失败');
       store.put('token', safeStorage.encryptString(value.trim()).toString('base64'));
       log('鉴权成功，Token 已加密保存', 'success');
@@ -251,10 +276,12 @@ const handlers = {
     history(getProject(projectId), deployment, platform),
   inspect: async ({ projectId }) => {
     const p = getProject(projectId);
+    const runtime = await prepareNode();
+    log('Node.js ' + runtime.version + ' · ' + runtime.executable, 'success');
     return {
       branch: await git(p, ['branch', '--show-current']),
       status: await git(p, ['status', '--short']),
-      node: await C.run(settings().node || 'node', ['--version'], { onLog: log }),
+      node: runtime.version,
     };
   },
   prepare: async (input) => {
@@ -285,6 +312,7 @@ const handlers = {
       activeTask = t;
       save(t);
       try {
+        const runtime = await prepareNode();
         const h = await history(p, r.deployment, config.platform);
         C.checkServerConflicts(p, r, h);
         await git(p, ['fetch', 'origin', r.branch]);
@@ -298,30 +326,22 @@ const handlers = {
           fs.existsSync(path.join(t.worktree, r.envFile)),
           `发布代码中不存在 ${r.envFile}，请将非敏感构建配置纳入版本管理后重试`,
         );
-        const node = settings().node || 'node';
-        const env = {
-          PATH:
-            (path.isAbsolute(node) ? path.dirname(node) + path.delimiter : '') + process.env.PATH,
-          ENVFILE: r.envFile,
-        };
-        const installScript = path.join(t.folder, 'install-worker.cjs');
-        fs.copyFileSync(path.join(__dirname, 'install-worker.cjs'), installScript);
+        const node = runtime.executable;
+        const env = { ...nodeEnvironment(node), ENVFILE: r.envFile };
+        const installScript = path.join(__dirname, 'install-worker.cjs');
         const pkg = JSON.parse(fs.readFileSync(path.join(t.worktree, 'package.json'), 'utf8'));
         const manager = pkg.packageManager || '';
-        if (manager.startsWith('yarn@'))
-          await C.run(node, [installScript, 'yarn'], {
-            cwd: t.worktree,
-            env,
-            onLog: log,
-            timeout: 900000,
-          });
-        else
-          await C.run(node, [installScript, 'npm'], {
-            cwd: t.worktree,
-            env,
-            onLog: log,
-            timeout: 900000,
-          });
+        await runBuildStage(
+          '1/2 安装项目依赖',
+          (onLog) =>
+            C.run(process.execPath, [installScript, manager.startsWith('yarn@') ? 'yarn' : 'npm'], {
+              cwd: t.worktree,
+              env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+              onLog,
+              timeout: 900000,
+            }),
+          log,
+        );
         const buildInput = path.join(t.folder, 'build.json');
         fs.writeFileSync(
           buildInput,
@@ -329,6 +349,7 @@ const handlers = {
             cwd: t.worktree,
             output: path.join(t.folder, 'bundle'),
             platform: t.platform,
+            nodeExecutable: node,
             build: t.build,
           }),
         );
@@ -336,12 +357,17 @@ const handlers = {
           `构建使用 code-push release-react 的 ${t.platform} bundle / Hermes 适配器；此阶段不上传`,
           'info',
         );
-        await C.run(process.execPath, [path.join(__dirname, 'build-worker.cjs'), buildInput], {
-          cwd: t.worktree,
-          env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
-          onLog: log,
-          timeout: 900000,
-        });
+        await runBuildStage(
+          `2/2 构建 ${t.platform === 'ios' ? 'iOS' : 'Android'} 热更新`,
+          (onLog) =>
+            C.run(process.execPath, [path.join(__dirname, 'build-worker.cjs'), buildInput], {
+              cwd: t.worktree,
+              env: { ...env, ELECTRON_RUN_AS_NODE: '1' },
+              onLog,
+              timeout: 900000,
+            }),
+          log,
+        );
         t.artifact = path.join(t.folder, 'update.zip');
         await zipDir(path.join(t.folder, 'bundle', 'CodePush'), t.artifact);
         t.sha256 = C.sha(t.artifact);
@@ -418,7 +444,12 @@ const handlers = {
           t.rule.deployment,
           t.artifact,
           t.rule.target,
-          { description, isMandatory: t.mandatory, isDisabled: false, rollout: 100 },
+          {
+            description,
+            isMandatory: t.mandatory,
+            isDisabled: false,
+            rollout: 100,
+          },
         ]);
         t.status = 'unknown';
         save(t);
@@ -459,7 +490,9 @@ const handlers = {
       return t;
     }),
   pickDirectory: async () => {
-    const r = await dialog.showOpenDialog(win, { properties: ['openDirectory'] });
+    const r = await dialog.showOpenDialog(win, {
+      properties: ['openDirectory'],
+    });
     return r.canceled ? null : r.filePaths[0];
   },
   pickFile: async () => {
@@ -509,7 +542,13 @@ app.whenReady().then(async () => {
     titleBarStyle: 'hidden',
     ...(process.platform === 'darwin'
       ? { trafficLightPosition: { x: 14, y: 10 } }
-      : { titleBarOverlay: { color: '#fafbfc', symbolColor: '#202c3b', height: 34 } }),
+      : {
+          titleBarOverlay: {
+            color: '#fafbfc',
+            symbolColor: '#202c3b',
+            height: 34,
+          },
+        }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

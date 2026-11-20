@@ -51,7 +51,7 @@ test('快捷修改版本同步配置，保留旧版本标记，且不改写原�
   assert.equal(next.rules[0].branch, 'master');
 });
 test('重复、过期和不完整版本不能保存', () => {
-  for (const target of ['1.0.3', '1.0', '*'])
+  for (const target of ['1.0', '*'])
     assert.throws(() =>
       updateVersion(project(), { ruleId: 'stable', expectedTarget: '1.0.2', target, tag: '' }),
     );
@@ -130,4 +130,58 @@ test('测试/预发布默认直发，开启确认后生效，托盘不包含生�
     quickRules({ rules: [...project().rules, testRule, stageRule] }).map((rule) => rule.id),
     ['test', 'release'],
   );
+});
+
+test('同版本不同分支分别保留标签，分支变更作废旧产物并拦截重复组合', () => {
+  const old = project();
+  const next = updateVersion(old, {
+    ruleId: 'stable',
+    expectedTarget: '1.0.2',
+    expectedBranch: 'master',
+    target: '1.0.3',
+    branch: 'releaseGray',
+    tag: '预发灰度',
+  });
+  assert.equal(next.rules[0].branch, 'releaseGray');
+  assert.equal(next.versionRecords.filter((r) => r.target === '1.0.3').length, 2);
+  assert.equal(next.versionRecords.find((r) => r.branch === 'gray').tag, '灰度');
+  assert.equal(next.versionRecords.find((r) => r.branch === 'releaseGray').tag, '预发灰度');
+  assert.throws(
+    () =>
+      updateVersion(next, {
+        ruleId: 'stable',
+        expectedTarget: '1.0.3',
+        expectedBranch: 'releaseGray',
+        target: '1.0.3',
+        branch: 'gray',
+        tag: '',
+      }),
+    /组合不能重复/,
+  );
+  assert.throws(
+    () =>
+      updateVersion(next, {
+        ruleId: 'stable',
+        expectedTarget: '1.0.3',
+        expectedBranch: 'master',
+        target: '1.0.3',
+        branch: 'test',
+        tag: '',
+      }),
+    /分支已被修改/,
+  );
+  const branchOnly = updateVersion(old, {
+    ruleId: 'stable',
+    expectedTarget: '1.0.2',
+    target: '1.0.2',
+    branch: 'new-master',
+    tag: '',
+  });
+  const changes = invalidateVersionTasks(
+    [{ id: 'ready', projectId: 'p', status: 'ready', rule: old.rules[0] }],
+    'p',
+    old,
+    branchOnly,
+  );
+  assert.equal(changes[0].status, 'outdated');
 });

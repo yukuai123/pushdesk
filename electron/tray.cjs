@@ -17,7 +17,11 @@ function trayIcon() {
         pixels[i + 3] = 255;
       }
     }
-  const icon = nativeImage.createFromBitmap(pixels, { width: side, height: side, scaleFactor: 1 });
+  const icon = nativeImage.createFromBitmap(pixels, {
+    width: side,
+    height: side,
+    scaleFactor: 1,
+  });
   if (process.platform === 'darwin') icon.setTemplateImage(true);
   return icon;
 }
@@ -49,7 +53,7 @@ function createTray({ projects, isBusy, show, quick, quit, pending, emit }) {
         submenu: platforms.map((platform) => ({
           label: platform === 'ios' ? 'iOS' : 'Android',
           submenu: rules.map((rule) => ({
-            label: `${rule.lane === 'test' ? '测试' : '预发布'} · ${rule.target}${rule.tag ? ' · ' + rule.tag : ''}`,
+            label: `${rule.lane === 'test' ? '测试' : '预发布'} · ${rule.target} · ${rule.branch}${rule.tag ? ' · ' + rule.tag : ''}`,
             enabled: !isBusy(),
             click: () =>
               quick({
@@ -68,13 +72,16 @@ function createTray({ projects, isBusy, show, quick, quit, pending, emit }) {
       menu.push({
         label: `待处理任务 (${ready.length})`,
         submenu: ready.map((task) => ({
-          label: `${task.projectName} · ${task.rule.target}`,
+          label: `${task.projectName} · ${task.rule.target} · ${task.rule.branch}`,
           click: () => show(task),
         })),
       });
     menu.push(
       { type: 'separator' },
-      { label: isBusy() ? '正在执行发布任务…' : recent.slice(0, 90), enabled: false },
+      {
+        label: isBusy() ? '正在执行发布任务…' : recent.slice(0, 90),
+        enabled: false,
+      },
       { label: '退出', enabled: !isBusy(), click: quit },
     );
     tray.setToolTip(isBusy() ? 'PushDesk · 正在执行任务' : 'PushDesk · 测试 / 预发布快捷发布');

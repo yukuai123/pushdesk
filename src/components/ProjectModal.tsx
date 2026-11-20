@@ -30,7 +30,12 @@ export function ProjectModal({
       path: '',
       app: '',
       rules: [
-        { id: uid(), lane: 'stable', ...releasePresets.stable, target: '1.0.2' },
+        {
+          id: uid(),
+          lane: 'stable',
+          ...releasePresets.stable,
+          target: '1.0.2',
+        },
         { id: uid(), lane: 'gray', ...releasePresets.gray, target: '1.0.3' },
       ],
     },
@@ -174,7 +179,12 @@ export function ProjectModal({
                   <Button
                     type="button"
                     className="text-button"
-                    onClick={() => change('ios', { ...draft.ios!, build: { ...iosBuildDefaults } })}
+                    onClick={() =>
+                      change('ios', {
+                        ...draft.ios!,
+                        build: { ...iosBuildDefaults },
+                      })
+                    }
                   >
                     恢复命令默认值
                   </Button>
@@ -193,7 +203,12 @@ export function ProjectModal({
               onClick={() =>
                 change('rules', [
                   ...draft.rules,
-                  { id: uid(), lane: 'test', ...releasePresets.test, target: '' },
+                  {
+                    id: uid(),
+                    lane: 'test',
+                    ...releasePresets.test,
+                    target: '',
+                  },
                 ])
               }
             >
@@ -202,8 +217,8 @@ export function ProjectModal({
             </Button>
           </div>
           <p className="muted tiny">
-            选择发布用途会自动填入分支、部署目标和环境文件，填入后可手动修改。同一 Production
-            内通过目标版本区分正式与灰度。
+            选择发布用途会自动填入分支、部署目标和环境文件，填入后可手动修改。版本号 +
+            分支为唯一配置，同版本可绑定不同分支。
           </p>
           {draft.rules.map((rule, i) => (
             <div className="rule-edit" key={rule.id}>
@@ -242,7 +257,11 @@ export function ProjectModal({
                             'rules',
                             draft.rules.map((x, j) =>
                               j === i
-                                ? { ...x, lane: e.target.value, ...releasePresets[e.target.value] }
+                                ? {
+                                    ...x,
+                                    lane: e.target.value,
+                                    ...releasePresets[e.target.value],
+                                  }
                                 : x,
                             ),
                           )

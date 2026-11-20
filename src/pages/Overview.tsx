@@ -12,10 +12,10 @@ import {
 import { Badge } from '../components/Badge';
 import { Empty } from '../components/Empty';
 import { ReleaseVersionCard } from '../components/ReleaseVersionCard';
-import { deploymentTargets, historyKey } from '../platform';
+import { deploymentTargets, historyKey, appName } from '../platform';
 import { Button, Input, Select } from '../ui';
 import { date, matches } from '../utils';
-import { versionRecords } from '../versions';
+import { versionRecords, sourceBranch } from '../versions';
 
 type Props = {
   project?: Project;
@@ -63,9 +63,23 @@ export function Overview({
     : null;
   const items = historyLoading || historyError ? [] : cache?.items || [];
   const records = project ? versionRecords(project) : [];
+  function recordedBranch(row: HistoryRow) {
+    return project
+      ? sourceBranch(row, state.tasks || [], {
+          projectId: project.id,
+          platform,
+          deployment: row.deployment,
+          app: appName(project, platform),
+        })
+      : undefined;
+  }
   function metadata(row: HistoryRow) {
+    const branch = recordedBranch(row);
     return records.filter(
-      (record) => record.deployment === row.deployment && matches(record.target, row.appVersion),
+      (record) =>
+        record.deployment === row.deployment &&
+        matches(record.target, row.appVersion) &&
+        (!branch || record.branch === branch),
     );
   }
   const rows: HistoryRow[] = items
@@ -74,6 +88,7 @@ export function Overview({
       (
         row.label +
         row.appVersion +
+        (recordedBranch(row) || '') +
         row.description +
         metadata(row)
           .map((record) => record.tag || '')
@@ -103,6 +118,12 @@ export function Overview({
       ),
     },
     {
+      title: '来源分支',
+      key: 'sourceBranch',
+      width: 140,
+      render: (_, row) => recordedBranch(row) || <span className="muted tiny">分支未记录</span>,
+    },
+    {
       title: '备注标签',
       key: 'tag',
       width: 130,
@@ -127,7 +148,7 @@ export function Overview({
               <Badge key={lane} lane={lane} />
             ))}
             {lanes.length > 1 && (
-              <Typography.Text type="danger">目标范围覆盖多个用途</Typography.Text>
+              <Typography.Text type="danger">分支未记录，匹配多个用途</Typography.Text>
             )}
           </div>
         ) : (
@@ -183,6 +204,9 @@ export function Overview({
           <ReleaseVersionCard
             key={rule.id}
             projectId={project.id}
+            platform={platform}
+            tasks={state.tasks || []}
+            app={appName(project, platform)}
             rule={rule}
             cache={state.histories[historyKey(project.id, rule.deployment, platform)]}
             busy={busy}
@@ -212,7 +236,7 @@ export function Overview({
             <Search size={14} />
             <Input
               aria-label="搜索版本"
-              placeholder="搜索版本、标签、说明"
+              placeholder="搜索版本、分支、标签、说明"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
             />
@@ -277,7 +301,8 @@ export function Overview({
       )}
       <p className="footnote">
         <ShieldCheck size={14} />
-        用途由本机版本配置标记；版本修改会同步后续发布配置，已发布的包保留原始记录。
+        配置按版本号 +
+        分支管理。同一应用和部署目标下，相同版本的客户端会匹配最新有效更新，分支不参与客户端分流。
       </p>
     </>
   );

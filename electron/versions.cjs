@@ -1,6 +1,6 @@
 const { assert, validateProject } = require('./core.cjs');
 
-const recordKey = (rule) => `${rule.deployment}:${rule.target}`;
+const recordKey = (rule) => JSON.stringify([rule.deployment, rule.target, rule.branch]);
 const releaseFields = ['id', 'lane', 'branch', 'deployment', 'target', 'envFile'];
 function sameReleaseRule(current, snapshot) {
   return !!current && releaseFields.every((field) => current[field] === snapshot[field]);
@@ -24,9 +24,19 @@ function updateVersion(project, input) {
   const current = project.rules.find((rule) => rule.id === input.ruleId);
   assert(current, '发布版本配置不存在，请刷新后重试');
   assert(current.target === input.expectedTarget, '版本已被修改，请刷新后重试');
+  assert(
+    input.expectedBranch === undefined || current.branch === input.expectedBranch,
+    '分支已被修改，请刷新后重试',
+  );
+  assert(input.branch === undefined || typeof input.branch === 'string', '请输入来源分支');
   assert(typeof input.target === 'string', '请输入版本号');
   assert(typeof input.tag === 'string' && input.tag.trim().length <= 80, '备注标签最多 80 个字符');
-  const rule = { ...current, target: input.target.trim(), tag: input.tag.trim() };
+  const rule = {
+    ...current,
+    target: input.target.trim(),
+    branch: input.branch === undefined ? current.branch : input.branch.trim(),
+    tag: input.tag.trim(),
+  };
   const next = {
     ...project,
     rules: project.rules.map((item) => (item.id === rule.id ? rule : item)),
@@ -51,7 +61,12 @@ function invalidateVersionTasks(tasks, projectId, previous, next) {
     .map((task) => ({
       ...task,
       status: 'outdated',
-      error: '发布版本或配置已变更，请按新版本重新构建；旧产物不会继续发布。',
+      error: '发布版本、分支或配置已变更，请按新配置重新构建；旧产物不会继续发布。',
     }));
 }
-module.exports = { rememberVersions, updateVersion, invalidateVersionTasks, sameReleaseRule };
+module.exports = {
+  rememberVersions,
+  updateVersion,
+  invalidateVersionTasks,
+  sameReleaseRule,
+};
